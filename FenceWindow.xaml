@@ -60,6 +60,15 @@
                         <MenuItem x:Name="DefaultItem" Header="Default pad for unsorted files"
                                   IsCheckable="True" Click="Default_Click"/>
                         <MenuItem x:Name="NoteOpenItem" Header="Open note in its editor" Visibility="Collapsed" Click="NoteOpen_Click"/>
+                        <MenuItem x:Name="LinksItem" Header="Edit links..." Visibility="Collapsed" Click="Links_Click"/>
+                        <MenuItem x:Name="ChameleonItem" Header="Chameleon (icons fade until hover)" IsCheckable="True" Click="Chameleon_Click"/>
+                        <MenuItem x:Name="WallpaperItem" Header="Match wallpaper colour" IsCheckable="True" Click="Wallpaper_Click"/>
+                        <MenuItem Header="Pad tools">
+                            <MenuItem x:Name="OpenAllItem" Header="Open all items" Click="OpenAll_Click"/>
+                            <MenuItem x:Name="ReportItem" Header="Report duplicates and stale files..." Click="Report_Click"/>
+                            <MenuItem Header="Hotkey..." Click="Hotkey_Click"/>
+                            <MenuItem Header="Export this pad..." Click="Export_Click"/>
+                        </MenuItem>
                         <MenuItem x:Name="SplitItem" Header="Split this tab into its own pad"
                                   Visibility="Collapsed" Click="Split_Click"/>
                         <MenuItem Header="Roll up / down" Click="RollUp_Click"/>
@@ -83,10 +92,16 @@
                              Background="#40FFFFFF" Foreground="White" CaretBrush="White" BorderThickness="0"
                              TextChanged="SearchBox_TextChanged" PreviewKeyDown="SearchBox_PreviewKeyDown"
                              LostKeyboardFocus="SearchBox_LostFocus"/>
-                    <TextBlock x:Name="SearchButton" Grid.Column="1" Text="&#xE721;" FontFamily="Segoe MDL2 Assets"
-                               Foreground="#C0FFFFFF" FontSize="12" VerticalAlignment="Center" Margin="4,0,9,0"
-                               Cursor="Hand" ToolTip="Search this pad" Background="Transparent"
-                               MouseLeftButtonDown="SearchButton_MouseLeftButtonDown"/>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock x:Name="OpenAllButton" Text="&#xE768;" FontFamily="Segoe MDL2 Assets" Visibility="Collapsed"
+                                   Foreground="#C0FFFFFF" FontSize="12" VerticalAlignment="Center" Margin="4,0,4,0"
+                                   Cursor="Hand" ToolTip="Open all (apps, links and the folder)" Background="Transparent"
+                                   MouseLeftButtonDown="OpenAllButton_MouseLeftButtonDown"/>
+                        <TextBlock x:Name="SearchButton" Text="&#xE721;" FontFamily="Segoe MDL2 Assets"
+                                   Foreground="#C0FFFFFF" FontSize="12" VerticalAlignment="Center" Margin="4,0,9,0"
+                                   Cursor="Hand" ToolTip="Search this pad" Background="Transparent"
+                                   MouseLeftButtonDown="SearchButton_MouseLeftButtonDown"/>
+                    </StackPanel>
                 </Grid>
             </Border>
 
@@ -118,7 +133,7 @@
                                     <StackPanel Width="{Binding TileWidth}" Background="Transparent"
                                                 MouseLeftButtonDown="Item_MouseLeftButtonDown"
                                                 MouseMove="Item_MouseMove"
-                                                ToolTip="{Binding Path}">
+                                                ToolTip="{Binding Tip}">
                                         <StackPanel.ContextMenu>
                                             <ContextMenu>
                                                 <MenuItem Header="Unpin from this pad (back to rules)" Click="Unpin_Click"/>

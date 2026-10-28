@@ -102,6 +102,27 @@ namespace Paddock
 
         /// <summary>Rules for a desktop pad (any match wins). Ignored for portals.</summary>
         public List<RuleDef> Rules { get; set; } = new();
+
+        /// <summary>Manual icon order: paths in the order the user dragged them into. Unlisted items follow by name. Empty = automatic.</summary>
+        public List<string> ItemOrder { get; set; } = new();
+
+        /// <summary>Global hotkey text such as "Ctrl+Alt+F1" that raises this pad for a few seconds; null = none.</summary>
+        public string? Hotkey { get; set; }
+
+        /// <summary>Icons fade out until the mouse is over the pad.</summary>
+        public bool Chameleon { get; set; }
+
+        /// <summary>Pad background follows the colour of the wallpaper behind it.</summary>
+        public bool WallpaperColor { get; set; }
+
+        /// <summary>Live pad kind: "downloads", "clipboard", "todo", "links", "project", "search"; null = an ordinary pad.</summary>
+        public string? PadType { get; set; }
+
+        /// <summary>Folder for project/search pads, note file for todo pads.</summary>
+        public string? PadSpec { get; set; }
+
+        /// <summary>Links for links/project pads, as "Title|url; Title|url".</summary>
+        public string Links { get; set; } = "";
     }
 
     public class LayoutFile

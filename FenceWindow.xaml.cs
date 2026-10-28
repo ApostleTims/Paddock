@@ -23,6 +23,10 @@ namespace Paddock
         public BitmapSource? Icon { get; set; }
         public double IconSize { get; set; } = 32;
         public double TileWidth => Math.Max(64, IconSize * 2.25);
+        /// <summary>Set for entries that aren't files (links, todos, clipboard text): double-click runs this instead of opening Path.</summary>
+        public Action? OnOpen { get; set; }
+        public string? TipText { get; set; }
+        public string Tip => TipText ?? Path;
     }
 
     public partial class FenceWindow : Window
@@ -90,6 +94,7 @@ namespace Paddock
             _noteTimer.Tick += (_, _) => FlushNote();
             Body.IsVisibleChanged += (_, _) => SyncNoteVisibility();
             Closed += (_, _) => { FlushNote(); _hoverTimer.Stop(); foreach (var w in _watchers) w.Dispose(); };
+            InitExtras();
 
             Watch();
             Refresh();
@@ -138,7 +143,8 @@ namespace Paddock
             AddAppItem.Visibility = _cfg.VaultPath == null && !note ? Visibility.Visible : Visibility.Collapsed;
             DefaultItem.IsChecked = _cfg.IsDefault;
             DefaultItem.Visibility = _cfg.PortalPath == null && _cfg.VaultPath == null && !note ? Visibility.Visible : Visibility.Collapsed;
-            NoteOpenItem.Visibility = note ? Visibility.Visible : Visibility.Collapsed;
+            NoteOpenItem.Visibility = note || _cfg.PadType == "todo" ? Visibility.Visible : Visibility.Collapsed;
+            ApplyExtrasState();
             Items.Visibility = note ? Visibility.Collapsed : Visibility.Visible;
             SyncNoteVisibility();
             if (note) LoadNote(force: true);
@@ -193,8 +199,9 @@ namespace Paddock
         void NoteOpen_Click(object s, RoutedEventArgs e)
         {
             FlushNote();
-            if (_cfg.NotePath != null && File.Exists(_cfg.NotePath))
-                try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(_cfg.NotePath) { UseShellExecute = true }); }
+            var note = _cfg.NotePath ?? (_cfg.PadType == "todo" ? _cfg.PadSpec : null);
+            if (note != null && File.Exists(note))
+                try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(note) { UseShellExecute = true }); }
                 catch (Exception ex) { MessageBox.Show(ex.Message, "Paddock"); }
         }
 
@@ -316,6 +323,13 @@ namespace Paddock
         IEnumerable<string> SourceFolders()
         {
             if (_cfg.NotePath != null) yield break; // a note pad edits one file; Watch() handles that file itself
+            if (_cfg.PadType != null)
+            {
+                if (_cfg.PadType == "downloads")
+                    yield return System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+                else if (_cfg.PadType == "project" && _cfg.PadSpec != null) yield return _cfg.PadSpec;
+                yield break; // clipboard/links/todo/search have no folder to list
+            }
             if (_cfg.PortalPath != null) { yield return _cfg.PortalPath; yield break; }
             if (_cfg.VaultPath != null) { yield return _cfg.VaultPath; yield break; }
             yield return Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
@@ -324,13 +338,14 @@ namespace Paddock
 
         void Watch()
         {
-            if (_cfg.NotePath != null)
+            var watchedNote = _cfg.NotePath ?? (_cfg.PadType == "todo" ? _cfg.PadSpec : null);
+            if (watchedNote != null)
             {
                 // Pick up outside edits (Obsidian, an editor, another tool) to the note's file.
-                var dir = System.IO.Path.GetDirectoryName(_cfg.NotePath);
+                var dir = System.IO.Path.GetDirectoryName(watchedNote);
                 if (dir != null && Directory.Exists(dir))
                 {
-                    var nw = new FileSystemWatcher(dir, System.IO.Path.GetFileName(_cfg.NotePath)) { EnableRaisingEvents = true };
+                    var nw = new FileSystemWatcher(dir, System.IO.Path.GetFileName(watchedNote)) { EnableRaisingEvents = true };
                     FileSystemEventHandler nh = (_, _) => Dispatcher.BeginInvoke(() => { _refreshTimer.Stop(); _refreshTimer.Start(); });
                     nw.Changed += nh; nw.Created += nh;
                     _watchers.Add(nw);
@@ -370,10 +385,11 @@ namespace Paddock
         public void Refresh()
         {
             if (_cfg.NotePath != null) { LoadNote(force: false); return; }
+            if (_cfg.PadType != null) { RefreshSpecial(); return; }
             var found = new List<FileSystemInfo>();
             // The default pad also takes whatever no other desktop pad's rules claim.
             var others = _cfg.IsDefault && _cfg.PortalPath == null && _cfg.VaultPath == null
-                ? AllConfigs().Where(c => c != _cfg && c.PortalPath == null && c.VaultPath == null && c.NotePath == null).ToList()
+                ? AllConfigs().Where(c => c != _cfg && c.PortalPath == null && c.VaultPath == null && c.NotePath == null && c.PadType == null).ToList()
                 : null;
             bool desktopPad = _cfg.PortalPath == null && _cfg.VaultPath == null;
             // A file dragged onto a desktop pad is pinned there: it shows in that pad only, whatever the rules say.
@@ -410,8 +426,11 @@ namespace Paddock
 
             var query = SearchBox.Visibility == Visibility.Visible ? SearchBox.Text.Trim() : "";
             _items.Clear();
+            var order = _cfg.ItemOrder.Select((p, i) => (p, i)).GroupBy(x => x.p, StringComparer.OrdinalIgnoreCase)
+                                      .ToDictionary(g => g.Key, g => g.First().i, StringComparer.OrdinalIgnoreCase);
             foreach (var f in found.Where(f => query.Length == 0 || f.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
                                    .OrderBy(f => _cfg.VaultPath != null ? 0 : 1)
+                                   .ThenBy(f => order.TryGetValue(f.FullName, out var ix) ? ix : int.MaxValue)
                                    .ThenBy(f => _cfg.VaultPath != null ? -f.LastWriteTimeUtc.Ticks : 0)
                                    .ThenBy(f => f.Name, StringComparer.OrdinalIgnoreCase))
                 _items.Add(new FenceItem { Name = System.IO.Path.GetFileNameWithoutExtension(f.Name) is { Length: > 0 } n && f is FileInfo ? n : f.Name, Path = f.FullName, Icon = Icons.For(f.FullName), IconSize = _cfg.IconSize });
@@ -731,6 +750,7 @@ namespace Paddock
                 UpdateLayer();
                 FitToScreens();
             }
+            ApplyWallpaper();
             _save();
         }
 
@@ -788,7 +808,7 @@ namespace Paddock
             _dragOrigin = e.GetPosition(this);
             _dragItem = (sender as FrameworkElement)?.DataContext as FenceItem;
             if (e.ClickCount != 2 || sender is not FrameworkElement { DataContext: FenceItem item }) return;
-            OpenItem(_cfg, item.Path);
+            if (item.OnOpen != null) item.OnOpen(); else OpenItem(_cfg, item.Path);
         }
 
         /// <summary>Open a pad item: vault notes go to Obsidian, everything else to its default app.</summary>
@@ -811,7 +831,7 @@ namespace Paddock
 
         /// <summary>What this pad is showing right now (the active tab), for the command palette.</summary>
         public IEnumerable<PaletteEntry> PaletteItems() =>
-            _items.Select(i => new PaletteEntry { Title = i.Name, Subtitle = _cfg.Title + "  -  " + i.Path, Icon = i.Icon, Path = i.Path, Pad = _cfg });
+            _items.Where(i => i.OnOpen == null).Select(i => new PaletteEntry { Title = i.Name, Subtitle = _cfg.Title + "  -  " + i.Path, Icon = i.Icon, Path = i.Path, Pad = _cfg });
 
         // Resizing from any side or corner. The mouse is read in screen space (not the thumb's own deltas),
         // because dragging a left/top edge moves the window and the thumb with it.
@@ -1113,8 +1133,14 @@ namespace Paddock
             finally { DragSource = null; }
         }
 
-        bool CanAccept(System.Windows.DragEventArgs e) =>
-            _cfg.VaultPath == null && _cfg.NotePath == null && DragSource != this && e.Data.GetDataPresent(DataFormats.FileDrop);
+        bool CanAccept(System.Windows.DragEventArgs e)
+        {
+            if (_cfg.VaultPath != null || _cfg.NotePath != null) return false;
+            if (_cfg.PadType is "downloads" or "clipboard" or "todo" or "search") return false;
+            if (_cfg.PadType == "links") return e.Data.GetDataPresent(DataFormats.UnicodeText);
+            if (DragSource == this) return Reorderable && e.Data.GetDataPresent(DataFormats.FileDrop); // dropping on yourself = reorder
+            return e.Data.GetDataPresent(DataFormats.FileDrop);
+        }
 
         void Pad_DragEnter(object s, System.Windows.DragEventArgs e)
         {
@@ -1126,6 +1152,7 @@ namespace Paddock
         void Pad_DragOver(object s, System.Windows.DragEventArgs e)
         {
             e.Effects = !CanAccept(e) ? DragDropEffects.None
+                : DragSource == this ? DragDropEffects.Move
                 : (DragSource != null && _cfg.PortalPath != null && (e.KeyStates & System.Windows.DragDropKeyStates.ControlKey) == 0)
                     ? DragDropEffects.Move : DragDropEffects.Copy;
             e.Handled = true;
@@ -1137,7 +1164,10 @@ namespace Paddock
         {
             Root.BorderBrush = BorderBrushFor();
             e.Handled = true;
-            if (!CanAccept(e) || e.Data.GetData(DataFormats.FileDrop) is not string[] paths) return;
+            if (!CanAccept(e)) return;
+            if (_cfg.PadType == "links") { AddLinksFromText(e.Data.GetData(DataFormats.UnicodeText) as string); return; }
+            if (e.Data.GetData(DataFormats.FileDrop) is not string[] paths) return;
+            if (DragSource == this) { ReorderDrop(e, paths[0]); return; }
             bool copy = DragSource == null || (e.KeyStates & System.Windows.DragDropKeyStates.ControlKey) != 0;
 
             if (_cfg.PortalPath != null)

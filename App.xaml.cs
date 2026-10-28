@@ -30,6 +30,8 @@ namespace Paddock
             yield return Cmd("New folder portal", "tray menu", NewPortal);
             yield return Cmd("New note pad", "tray menu", NewNotePad);
             yield return Cmd("Quick capture to note pad", "appends a timestamped line", QuickCapture);
+            yield return Cmd("Import pad", "from a .paddockpad file", ImportPad);
+            yield return Cmd("Check for updates", "looks for a newer release", () => _ = CheckForUpdate(manual: true));
             yield return Cmd("Next profile", "Ctrl+Alt+Right", () => CycleProfile(+1));
             yield return Cmd("Previous profile", "Ctrl+Alt+Left", () => CycleProfile(-1));
             foreach (var name in _layout.ProfileNames().Where(n => !n.Equals(_layout.ActiveProfile, StringComparison.OrdinalIgnoreCase)))
@@ -83,6 +85,11 @@ namespace Paddock
             Native.RegisterHotKey(_hotkeySource.Handle, HotkeyPrev, mods, 0x25);
             for (int i = 0; i < 9; i++)
                 Native.RegisterHotKey(_hotkeySource.Handle, HotkeyJumpBase + i, mods, (uint)(0x31 + i));
+
+            FenceWindow.RehookHotkeys = RegisterPadHotkeys;
+            RegisterPadHotkeys();
+            if (_tray != null) _tray.BalloonTipClicked += (_, _) => OnBalloonClicked();
+            StartUpdateChecks();
         }
 
         IntPtr HotkeyHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -99,6 +106,7 @@ namespace Paddock
                 var names = _layout.ProfileNames();
                 if (id - HotkeyJumpBase < names.Count) SwitchProfile(names[id - HotkeyJumpBase]);
             }
+            else if (_padHotkeys.TryGetValue(id, out var padCfg)) RaisePad(padCfg);
             else handled = false;
             return IntPtr.Zero;
         }
@@ -121,6 +129,7 @@ namespace Paddock
             {
                 foreach (var id in new[] { HotkeyPeek, HotkeyNext, HotkeyPrev, HotkeyPalette }.Concat(Enumerable.Range(HotkeyJumpBase, 9)))
                     Native.UnregisterHotKey(_hotkeySource.Handle, id);
+                foreach (var id in _padHotkeys.Keys) Native.UnregisterHotKey(_hotkeySource.Handle, id);
                 _hotkeySource.Dispose();
             }
             DesktopClick.Stop();
@@ -140,6 +149,7 @@ namespace Paddock
                 foreach (var t in tabs) t.TabActive = t == active;
                 Open(active);
             }
+            RegisterPadHotkeys(); // no-op at startup (no hotkey window yet); matters after a profile switch
         }
 
         void Open(FenceConfig cfg)
@@ -185,6 +195,7 @@ namespace Paddock
             menu.Items.Add("New vault pad...", null, (_, _) => NewVaultFence());
             menu.Items.Add("New note pad...", null, (_, _) => NewNotePad());
             menu.Items.Add("New note pad from file...", null, (_, _) => NewNotePadFromFile());
+            AddLiveTrayItems(menu);
             menu.Items.Add("Quick capture to note pad...", null, (_, _) => QuickCapture());
             menu.Items.Add("Undo last archive / rule action", null, (_, _) => UndoArchive());
             menu.Items.Add("Undo last pad drop", null, (_, _) =>
