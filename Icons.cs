@@ -22,7 +22,7 @@ namespace Paddock
                 {
                     // Shortcuts (and the launchers we make for Store apps) get the shell's own tile image:
                     // sharp, and the real app logo rather than explorer's.
-                    if (p.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase))
+                    if (File.Exists(p + ".appid"))
                     {
                         var side = p + ".appid";
                         var name = File.Exists(side) ? "shell:AppsFolder\\" + File.ReadAllText(side).Trim() : p;
@@ -47,7 +47,6 @@ namespace Paddock
         [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = false)]
         static extern void SHCreateItemFromParsingName(string path, IntPtr bc, [In] ref Guid riid, [MarshalAs(UnmanagedType.Interface)] out IShellItemImageFactory item);
         [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr o);
-
         static BitmapSource? ShellImage(string parsingName, int px)
         {
             try
@@ -59,10 +58,8 @@ namespace Paddock
                 try
                 {
                     var src = Imaging.CreateBitmapSourceFromHBitmap(hbmp, IntPtr.Zero, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
-                    // HBITMAP from the shell is premultiplied 32-bit ARGB; convert so transparency is kept.
-                    var conv = new FormatConvertedBitmap(src, System.Windows.Media.PixelFormats.Pbgra32, null, 0);
-                    conv.Freeze();
-                    return conv;
+                    src.Freeze();
+                    return src;
                 }
                 finally { DeleteObject(hbmp); }
             }
