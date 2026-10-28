@@ -97,20 +97,54 @@
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <StackPanel Width="{Binding TileWidth}" Margin="2" Background="Transparent"
-                                        MouseLeftButtonDown="Item_MouseLeftButtonDown"
-                                        MouseMove="Item_MouseMove"
-                                        ToolTip="{Binding Path}">
-                                <StackPanel.ContextMenu>
-                                    <ContextMenu>
-                                        <MenuItem Header="Unpin from this pad (back to rules)" Click="Unpin_Click"/>
-                                    </ContextMenu>
-                                </StackPanel.ContextMenu>
-                                <Image Source="{Binding Icon}" Width="{Binding IconSize}" Height="{Binding IconSize}" Margin="0,4,0,2"/>
-                                <TextBlock Text="{Binding Name}" Foreground="White" FontSize="11"
-                                           TextAlignment="Center" TextWrapping="Wrap"
-                                           MaxHeight="30" TextTrimming="CharacterEllipsis"/>
-                            </StackPanel>
+                            <Border x:Name="Tile" Margin="2" CornerRadius="6" Background="Transparent">
+                                <Border.Triggers>
+                                    <!-- Click: the icon dips and springs back. -->
+                                    <EventTrigger RoutedEvent="PreviewMouseLeftButtonDown">
+                                        <BeginStoryboard>
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetName="IconScale" Storyboard.TargetProperty="ScaleX"
+                                                                 To="0.82" Duration="0:0:0.08" AutoReverse="True"/>
+                                                <DoubleAnimation Storyboard.TargetName="IconScale" Storyboard.TargetProperty="ScaleY"
+                                                                 To="0.82" Duration="0:0:0.08" AutoReverse="True"/>
+                                                <DoubleAnimation Storyboard.TargetName="Flash" Storyboard.TargetProperty="Opacity"
+                                                                 From="0.55" To="0" Duration="0:0:0.3"/>
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </EventTrigger>
+                                </Border.Triggers>
+                                <Grid>
+                                    <Border x:Name="Flash" CornerRadius="6" Background="White" Opacity="0" IsHitTestVisible="False"/>
+                                    <StackPanel Width="{Binding TileWidth}" Background="Transparent"
+                                                MouseLeftButtonDown="Item_MouseLeftButtonDown"
+                                                MouseMove="Item_MouseMove"
+                                                ToolTip="{Binding Path}">
+                                        <StackPanel.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="Unpin from this pad (back to rules)" Click="Unpin_Click"/>
+                                            </ContextMenu>
+                                        </StackPanel.ContextMenu>
+                                        <Image x:Name="Ico" Source="{Binding Icon}" Width="{Binding IconSize}" Height="{Binding IconSize}"
+                                               Margin="0,4,0,2" RenderTransformOrigin="0.5,0.5">
+                                            <Image.RenderTransform><ScaleTransform x:Name="IconScale"/></Image.RenderTransform>
+                                        </Image>
+                                        <TextBlock Text="{Binding Name}" Foreground="White" FontSize="11"
+                                                   TextAlignment="Center" TextWrapping="Wrap"
+                                                   MaxHeight="30" TextTrimming="CharacterEllipsis"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                            <DataTemplate.Triggers>
+                                <!-- Hover: a soft backdrop plate and a glow that follows the icon's own outline. -->
+                                <Trigger SourceName="Tile" Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Tile" Property="Background" Value="#33FFFFFF"/>
+                                    <Setter TargetName="Ico" Property="Effect">
+                                        <Setter.Value>
+                                            <DropShadowEffect Color="White" BlurRadius="14" ShadowDepth="0" Opacity="0.85"/>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Trigger>
+                            </DataTemplate.Triggers>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
