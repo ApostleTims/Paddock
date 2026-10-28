@@ -75,6 +75,7 @@ namespace Paddock
                 lnk.TargetPath = "explorer.exe";
                 lnk.Arguments = "shell:AppsFolder\\" + e.AppId;
                 lnk.Save();
+                File.WriteAllText(path + ".appid", e.AppId!); // lets Icons.For find the real app logo
                 return path;
             }
             catch { return null; }
