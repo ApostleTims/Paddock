@@ -12,7 +12,8 @@ namespace Paddock
     /// </summary>
     public static class Archiver
     {
-        public record Entry(string Batch, DateTime When, string From, string To);
+        /// <param name="Op">"move" (archive or rule-action move) or "copy" (rule-action copy; undo removes the copy).</param>
+        public record Entry(string Batch, DateTime When, string From, string To, string Op = "move");
 
         public static readonly string Root =
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "Paddock Archive");
@@ -73,6 +74,30 @@ namespace Paddock
             return moved;
         }
 
+        /// <summary>Rule actions: move or copy each file into <paramref name="destDir"/>(file), journaled like an archive batch.</summary>
+        public static int Transfer(IEnumerable<FileInfo> files, Func<FileInfo, string> destDir, bool copy)
+        {
+            var batch = Guid.NewGuid().ToString("N");
+            var log = ReadLog();
+            int done = 0;
+            foreach (var f in files)
+            {
+                try
+                {
+                    var dir = destDir(f);
+                    if (string.Equals(Path.GetFullPath(dir).TrimEnd('\\'), f.DirectoryName!.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)) continue;
+                    Directory.CreateDirectory(dir);
+                    var dest = Unique(Path.Combine(dir, f.Name));
+                    if (copy) File.Copy(f.FullName, dest); else File.Move(f.FullName, dest);
+                    log.Add(new Entry(batch, DateTime.Now, f.FullName, dest, copy ? "copy" : "move"));
+                    done++;
+                }
+                catch { /* in use, permission, or gone: leave it */ }
+            }
+            if (done > 0) WriteLog(log);
+            return done;
+        }
+
         /// <summary>Put the most recent batch back. Returns (restored, skipped).</summary>
         public static (int restored, int skipped) UndoLast()
         {
@@ -85,6 +110,13 @@ namespace Paddock
                 try
                 {
                     if (!File.Exists(e.To)) { skipped++; log.Remove(e); continue; }
+                    if (e.Op == "copy")
+                    {
+                        // Only remove the copy if the original is still there and the copy is unchanged.
+                        if (File.Exists(e.From) && new FileInfo(e.From).Length == new FileInfo(e.To).Length) { File.Delete(e.To); ok++; log.Remove(e); }
+                        else { skipped++; }
+                        continue;
+                    }
                     Directory.CreateDirectory(Path.GetDirectoryName(e.From)!);
                     File.Move(e.To, Unique(e.From));
                     ok++; log.Remove(e);

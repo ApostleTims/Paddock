@@ -186,7 +186,7 @@ namespace Paddock
             menu.Items.Add("New note pad...", null, (_, _) => NewNotePad());
             menu.Items.Add("New note pad from file...", null, (_, _) => NewNotePadFromFile());
             menu.Items.Add("Quick capture to note pad...", null, (_, _) => QuickCapture());
-            menu.Items.Add("Undo last archive", null, (_, _) => UndoArchive());
+            menu.Items.Add("Undo last archive / rule action", null, (_, _) => UndoArchive());
             menu.Items.Add("Undo last pad drop", null, (_, _) =>
                 _tray?.ShowBalloonTip(2500, "Paddock", FenceWindow.UndoLastDrop(), System.Windows.Forms.ToolTipIcon.Info));
             menu.Items.Add("Open archive folder", null, (_, _) =>
@@ -380,7 +380,23 @@ namespace Paddock
                         System.Windows.Forms.ToolTipIcon.None);
             };
             _archiveTimer.Start();
+
+            // Automatic rule actions: every 5 minutes, only files untouched for 60 s (so half-downloaded files are left alone).
+            var actionTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMinutes(5) };
+            actionTimer.Tick += (_, _) =>
+            {
+                int n = 0;
+                foreach (var w in _windows.ToList())
+                    if (w.Config.ActionAuto) n += w.RunAction(60);
+                if (n > 0)
+                    _tray?.ShowBalloonTip(2500, "Paddock", $"Rule action handled {n} file(s). Tray > Undo last archive / rule action puts them back.",
+                        System.Windows.Forms.ToolTipIcon.None);
+            };
+            actionTimer.Start();
+            _actionTimer = actionTimer;
         }
+
+        System.Windows.Threading.DispatcherTimer? _actionTimer;
 
         void UndoArchive()
         {

@@ -90,6 +90,13 @@ namespace Paddock
         /// <summary>Move files untouched for this many days to the archive folder; 0 = off.</summary>
         public int ArchiveAfterDays { get; set; }
 
+        /// <summary>Rule action for a desktop pad: "Off", "Move" or "Copy" files its rules match into <see cref="ActionTarget"/>.</summary>
+        public string ActionMode { get; set; } = "Off";
+        /// <summary>Destination folder; may use {yyyy} {MM} {ext} {pad}.</summary>
+        public string? ActionTarget { get; set; }
+        /// <summary>Also run on its own every 5 minutes (files untouched for at least a minute). Off by default.</summary>
+        public bool ActionAuto { get; set; }
+
         /// <summary>Screen edge this pad auto-hides against (X/Y/Width/Height then describe its expanded size).</summary>
         public DockEdge Dock { get; set; } = DockEdge.None;
 

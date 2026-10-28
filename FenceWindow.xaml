@@ -53,6 +53,9 @@
                         </MenuItem>
                         <MenuItem x:Name="ArchiveSetItem" Header="Auto-archive old files..." Click="ArchiveSet_Click"/>
                         <MenuItem x:Name="ArchiveNowItem" Header="Archive old files now" Click="ArchiveNow_Click"/>
+                        <MenuItem x:Name="ActionSetItem" Header="Rule action (move/copy)..." Click="ActionSet_Click"/>
+                        <MenuItem x:Name="ActionRunItem" Header="Preview and run rule action" Click="ActionRun_Click"/>
+                        <MenuItem x:Name="ActionAutoItem" Header="Run rule action automatically" IsCheckable="True" Click="ActionAuto_Click"/>
                         <MenuItem x:Name="DefaultItem" Header="Default pad for unsorted files"
                                   IsCheckable="True" Click="Default_Click"/>
                         <MenuItem x:Name="NoteOpenItem" Header="Open note in its editor" Visibility="Collapsed" Click="NoteOpen_Click"/>

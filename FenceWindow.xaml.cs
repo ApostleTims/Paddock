@@ -132,6 +132,9 @@ namespace Paddock
             ExcludeItem.IsChecked = _cfg.ExcludeFromQuickHide;
             bool note = _cfg.NotePath != null;
             RulesItem.Visibility = _cfg.PortalPath == null && !note ? Visibility.Visible : Visibility.Collapsed;
+            var actionVis = _cfg.PortalPath == null && _cfg.VaultPath == null && !note ? Visibility.Visible : Visibility.Collapsed;
+            ActionSetItem.Visibility = ActionRunItem.Visibility = ActionAutoItem.Visibility = actionVis;
+            ActionAutoItem.IsChecked = _cfg.ActionAuto;
             DefaultItem.IsChecked = _cfg.IsDefault;
             DefaultItem.Visibility = _cfg.PortalPath == null && _cfg.VaultPath == null && !note ? Visibility.Visible : Visibility.Collapsed;
             NoteOpenItem.Visibility = note ? Visibility.Visible : Visibility.Collapsed;
@@ -931,6 +934,79 @@ namespace Paddock
             if (count == 0) { MessageBox.Show("Nothing is old enough yet.", "Paddock"); return; }
             if (MessageBox.Show($"Move {count} file(s) to the archive?", "Paddock", MessageBoxButton.YesNo) == MessageBoxResult.Yes)
                 RunArchive();
+        }
+
+        // ---- Rule actions: move/copy what this desktop pad's rules match; previewed first, journaled, undoable ----
+        public List<FileInfo> ActionFiles(double minAgeSeconds = 0)
+        {
+            var list = new List<FileInfo>();
+            if (_cfg.ActionMode == "Off" || _cfg.ActionTarget == null || _cfg.Rules.Count == 0
+                || _cfg.PortalPath != null || _cfg.VaultPath != null || _cfg.NotePath != null) return list;
+            foreach (var dir in SourceFolders().Where(Directory.Exists))
+            {
+                try
+                {
+                    foreach (var f in new DirectoryInfo(dir).EnumerateFiles())
+                    {
+                        if (f.Name.Equals("desktop.ini", StringComparison.OrdinalIgnoreCase)) continue;
+                        if ((f.Attributes & FileAttributes.Hidden) != 0) continue;
+                        if ((DateTime.Now - f.LastWriteTime).TotalSeconds < minAgeSeconds) continue;
+                        if (_cfg.Rules.Any(r => r.Matches(f))) list.Add(f);
+                    }
+                }
+                catch { }
+            }
+            return list;
+        }
+
+        /// <summary>Run the action now; returns how many files were moved/copied.</summary>
+        public int RunAction(double minAgeSeconds = 0)
+        {
+            var files = ActionFiles(minAgeSeconds);
+            if (files.Count == 0) return 0;
+            var n = Archiver.Transfer(files, f => RuleActions.Expand(_cfg.ActionTarget!, f, _cfg.Title), _cfg.ActionMode == "Copy");
+            if (n > 0) Refresh();
+            return n;
+        }
+
+        void ActionSet_Click(object s, RoutedEventArgs e)
+        {
+            var text = InputDialog.Ask("Rule action",
+                "What to do with files this pad's rules match.\nFormat:  move: D:\\Sorted\\{ext}   or   copy: D:\\Backup\\{yyyy}\\{MM}\nTokens: {ext} {yyyy} {MM} {pad}. Empty = off.\nNothing happens until you use \"Preview and run\" (or turn on automatic).",
+                RuleActions.Format(_cfg), this);
+            if (text == null) return;
+            var p = RuleActions.Parse(text);
+            if (p == null) { MessageBox.Show("Use  move: <full folder path>  or  copy: <full folder path>.", "Paddock"); return; }
+            _cfg.ActionMode = p.Value.Mode; _cfg.ActionTarget = p.Value.Target;
+            if (p.Value.Mode == "Off") { _cfg.ActionAuto = false; ActionAutoItem.IsChecked = false; }
+            _save();
+        }
+
+        void ActionRun_Click(object s, RoutedEventArgs e)
+        {
+            if (_cfg.ActionMode == "Off") { MessageBox.Show("Set a rule action first (right-click header > Rule action...).", "Paddock"); return; }
+            if (_cfg.Rules.Count == 0) { MessageBox.Show("This pad has no rules, so nothing matches.", "Paddock"); return; }
+            var files = ActionFiles();
+            if (files.Count == 0) { MessageBox.Show("No files match right now.", "Paddock"); return; }
+            var verb = _cfg.ActionMode == "Copy" ? "Copy" : "Move";
+            var lines = files.Take(12).Select(f => $"{f.Name}  ->  {RuleActions.Expand(_cfg.ActionTarget!, f, _cfg.Title)}");
+            var more = files.Count > 12 ? $"\n...and {files.Count - 12} more" : "";
+            if (MessageBox.Show($"{verb} {files.Count} file(s)?\n\n{string.Join("\n", lines)}{more}\n\nTray > Undo last archive / rule action reverses it.",
+                    "Paddock - preview", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
+            var n = RunAction();
+            MessageBox.Show($"{verb} done: {n} of {files.Count} file(s). (Locked files are skipped.)", "Paddock");
+        }
+
+        void ActionAuto_Click(object s, RoutedEventArgs e)
+        {
+            if (ActionAutoItem.IsChecked && _cfg.ActionMode == "Off")
+            {
+                ActionAutoItem.IsChecked = false;
+                MessageBox.Show("Set a rule action first.", "Paddock");
+                return;
+            }
+            _cfg.ActionAuto = ActionAutoItem.IsChecked;
+            _save();
         }
 
         void RollUp_Click(object s, RoutedEventArgs e) => ToggleRollUp();
