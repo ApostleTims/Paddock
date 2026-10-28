@@ -135,6 +135,7 @@ namespace Paddock
             var actionVis = _cfg.PortalPath == null && _cfg.VaultPath == null && !note ? Visibility.Visible : Visibility.Collapsed;
             ActionSetItem.Visibility = ActionRunItem.Visibility = ActionAutoItem.Visibility = actionVis;
             ActionAutoItem.IsChecked = _cfg.ActionAuto;
+            AddAppItem.Visibility = _cfg.VaultPath == null && !note ? Visibility.Visible : Visibility.Collapsed;
             DefaultItem.IsChecked = _cfg.IsDefault;
             DefaultItem.Visibility = _cfg.PortalPath == null && _cfg.VaultPath == null && !note ? Visibility.Visible : Visibility.Collapsed;
             NoteOpenItem.Visibility = note ? Visibility.Visible : Visibility.Collapsed;
@@ -934,6 +935,38 @@ namespace Paddock
             if (count == 0) { MessageBox.Show("Nothing is old enough yet.", "Paddock"); return; }
             if (MessageBox.Show($"Move {count} file(s) to the archive?", "Paddock", MessageBoxButton.YesNo) == MessageBoxResult.Yes)
                 RunArchive();
+        }
+
+        // ---- Add app: pick from installed apps (Start menu + Store) ----
+        async void AddApp_Click(object s, RoutedEventArgs e)
+        {
+            var prev = Mouse.OverrideCursor;
+            Mouse.OverrideCursor = Cursors.Wait;
+            List<StartApps.Entry> all;
+            try { all = await System.Threading.Tasks.Task.Run(StartApps.Load); }
+            finally { Mouse.OverrideCursor = prev; }
+            var picked = AppPicker.Pick(all, this);
+            if (picked.Count == 0) return;
+            int failed = 0;
+            foreach (var entry in picked)
+            {
+                var path = StartApps.Resolve(entry);
+                if (path == null) { failed++; continue; }
+                try
+                {
+                    if (_cfg.PortalPath != null) PlaceInto(path, _cfg.PortalPath, copy: true); // a portal is a real folder: put a shortcut in it
+                    else
+                    {
+                        foreach (var c in AllConfigs()) c.Pinned.RemoveAll(x => x.Equals(path, StringComparison.OrdinalIgnoreCase));
+                        _cfg.Pinned.Add(path); // a desktop pad pins the shortcut by reference; nothing moves
+                    }
+                }
+                catch { failed++; }
+            }
+            _save();
+            Refresh();
+            DefaultChanged?.Invoke();
+            if (failed > 0) MessageBox.Show($"{failed} app(s) could not be added.", "Paddock");
         }
 
         // ---- Rule actions: move/copy what this desktop pad's rules match; previewed first, journaled, undoable ----
