@@ -44,8 +44,78 @@ namespace Paddock
                 SetPeek(false);
                 if (_hotkeyRevealed) { _hotkeyRevealed = false; Hide(); } // it was hidden by quick-hide before the hotkey
             };
-            Loaded += (_, _) => ApplyWallpaper();
-            Closed += (_, _) => { ClipboardHistory.Changed -= clip; _searchTimer.Stop(); _peekTimer.Stop(); _searchCts?.Cancel(); };
+            Loaded += (_, _) => { ApplyWallpaper(); ApplyBlur(); };
+            Header.MouseDown += (_, e) =>
+            {
+                if (e.ChangedButton == MouseButton.Middle) { RaiseFor(_cfg); e.Handled = true; } // middle-click header = peek
+            };
+            MouseMove += (_, _) => _lastActive = DateTime.UtcNow;
+            _idleTimer.Tick += (_, _) =>
+            {
+                if (_cfg.AutoHideSeconds <= 0 || !IsVisible || Root.IsMouseOver || _peekTimer.IsEnabled) return;
+                if ((DateTime.UtcNow - _lastActive).TotalSeconds >= _cfg.AutoHideSeconds) Hide();
+            };
+            _idleTimer.Start();
+            Closed += (_, _) => { ClipboardHistory.Changed -= clip; _searchTimer.Stop(); _peekTimer.Stop(); _idleTimer.Stop(); _searchCts?.Cancel(); };
+        }
+
+        readonly DispatcherTimer _idleTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+        DateTime _lastActive = DateTime.UtcNow;
+
+        // ---- Lock, single-click, sort by use, blur, auto-hide, font ----
+        public void SetLocked(bool v) { _cfg.Locked = v; ApplyExtrasState(); }
+
+        void ApplyFont()
+        {
+            if (string.IsNullOrWhiteSpace(_cfg.FontName)) Root.ClearValue(System.Windows.Documents.TextElement.FontFamilyProperty);
+            else Root.SetValue(System.Windows.Documents.TextElement.FontFamilyProperty, new FontFamily(_cfg.FontName));
+        }
+
+        void Lock_Click(object s, RoutedEventArgs e) { _cfg.Locked = LockItem.IsChecked; ApplyExtrasState(); _save(); }
+        void SingleClick_Click(object s, RoutedEventArgs e) { _cfg.SingleClick = SingleClickItem.IsChecked; _save(); }
+        void SortUse_Click(object s, RoutedEventArgs e) { _cfg.SortByUse = SortUseItem.IsChecked; _save(); Refresh(); }
+        void Blur_Click(object s, RoutedEventArgs e) { _cfg.Blur = BlurItem.IsChecked; ApplyBlur(); _save(); }
+        void ClearSelection_Click(object s, RoutedEventArgs e) { foreach (var i in _items) i.Selected = false; }
+
+        void AutoHide_Click(object s, RoutedEventArgs e)
+        {
+            var cur = _cfg.AutoHideSeconds;
+            var next = cur switch { 0 => 15, 15 => 60, 60 => 300, _ => 0 };
+            _cfg.AutoHideSeconds = next;
+            _lastActive = DateTime.UtcNow;
+            _save();
+            MessageBox.Show(this, next == 0
+                ? "Auto-hide is off for this pad."
+                : $"This pad will hide after {(next >= 60 ? next / 60 + " min" : next + " s")} without the mouse over it.\n\nBring it back with its hotkey, a middle-click peek, or the quick-hide toggle. Click again to cycle: 15 s, 1 min, 5 min, off.",
+                "Paddock", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        struct AccentPolicy { public int State; public int Flags; public int Color; public int Anim; }
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        struct WinCompAttrData { public int Attr; public IntPtr Data; public int Size; }
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        static extern int SetWindowCompositionAttribute(IntPtr hwnd, ref WinCompAttrData data);
+
+        /// <summary>Frosted-glass blur behind the pad (undocumented Windows API; harmless if it fails).</summary>
+        void ApplyBlur()
+        {
+            try
+            {
+                var h = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+                if (h == IntPtr.Zero) return;
+                var acc = new AccentPolicy { State = _cfg.Blur ? 3 : 0 }; // 3 = blur behind, 0 = off
+                int size = System.Runtime.InteropServices.Marshal.SizeOf(acc);
+                var p = System.Runtime.InteropServices.Marshal.AllocHGlobal(size);
+                try
+                {
+                    System.Runtime.InteropServices.Marshal.StructureToPtr(acc, p, false);
+                    var d = new WinCompAttrData { Attr = 19, Data = p, Size = size }; // 19 = ACCENT_POLICY
+                    SetWindowCompositionAttribute(h, ref d);
+                }
+                finally { System.Runtime.InteropServices.Marshal.FreeHGlobal(p); }
+            }
+            catch { }
         }
 
         /// <summary>Menu visibility and ticks that depend on the pad type. Called from ApplyConfigState after the basic rules.</summary>
@@ -68,6 +138,13 @@ namespace Paddock
             OpenAllButton.Visibility = t == "project" ? Visibility.Visible : Visibility.Collapsed;
             ChameleonItem.IsChecked = _cfg.Chameleon;
             WallpaperItem.IsChecked = _cfg.WallpaperColor;
+            LockItem.IsChecked = _cfg.Locked;
+            SingleClickItem.IsChecked = _cfg.SingleClick;
+            SortUseItem.IsChecked = _cfg.SortByUse;
+            BlurItem.IsChecked = _cfg.Blur;
+            Grip.IsHitTestVisible = !_cfg.Locked;
+            ApplyFont();
+            if (IsLoaded) ApplyBlur();
             FadeIcons(Root.IsMouseOver);
             if (IsLoaded) ApplyWallpaper();
         }

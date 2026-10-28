@@ -135,6 +135,65 @@ namespace Paddock
             menu.Items.Add(live);
             menu.Items.Add("Import pad...", null, (_, _) => ImportPad());
             menu.Items.Add("Check for updates...", null, (_, _) => _ = CheckForUpdate(manual: true));
+            menu.Items.Add("Lock / unlock all pads", null, (_, _) => ToggleLockAll());
+            menu.Items.Add("Health check...", null, (_, _) => HealthCheck());
+            var startup = new System.Windows.Forms.ToolStripMenuItem("Start with Windows") { Checked = StartsWithWindows() };
+            startup.Click += (_, _) => { SetStartWithWindows(!StartsWithWindows()); startup.Checked = StartsWithWindows(); };
+            menu.Items.Add(startup);
+        }
+
+        // ---- Start with Windows: a per-user Run key (no admin, easy to undo from Task Manager > Startup) ----
+        const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
+
+        static bool StartsWithWindows()
+        {
+            try { using var k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(RunKey); return k?.GetValue("Paddock") != null; }
+            catch { return false; }
+        }
+
+        static void SetStartWithWindows(bool on)
+        {
+            try
+            {
+                using var k = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(RunKey);
+                if (on) k.SetValue("Paddock", "\"" + Environment.ProcessPath + "\"");
+                else k.DeleteValue("Paddock", false);
+            }
+            catch (Exception ex) { System.Windows.MessageBox.Show("Could not change startup: " + ex.Message, "Paddock"); }
+        }
+
+        void ToggleLockAll()
+        {
+            bool lockAll = _windows.Any(w => !w.Config.Locked);
+            foreach (var w in _windows) w.SetLocked(lockAll);
+            Save();
+        }
+
+        static bool Missing(string p) => !p.Contains("://") && !System.IO.File.Exists(p) && !System.IO.Directory.Exists(p);
+
+        /// <summary>Looks for pads whose folder/note is gone and shortcuts that no longer exist; offers to drop the dead shortcuts.</summary>
+        void HealthCheck()
+        {
+            var problems = new List<string>();
+            int dead = 0;
+            foreach (var c in _layout.Fences)
+            {
+                var title = string.IsNullOrWhiteSpace(c.Title) ? "(untitled)" : c.Title;
+                foreach (var (kind, p) in new[] { ("folder", c.PortalPath), ("vault", c.VaultPath), ("note", c.NotePath),
+                             ("source", c.PadType is "project" or "search" or "todo" ? c.PadSpec : null) })
+                    if (!string.IsNullOrEmpty(p) && Missing(p)) problems.Add($"{title}: {kind} missing  ({p})");
+                var gone = c.Pinned.Where(Missing).ToList();
+                dead += gone.Count;
+                if (gone.Count > 0) problems.Add($"{title}: {gone.Count} missing shortcut(s), e.g. {System.IO.Path.GetFileName(gone[0])}");
+            }
+            if (problems.Count == 0) { System.Windows.MessageBox.Show("All pads look healthy: every folder, note and shortcut exists.", "Paddock - health check"); return; }
+            var text = string.Join("\n", problems.Take(15)) + (problems.Count > 15 ? $"\n...and {problems.Count - 15} more" : "");
+            if (dead == 0) { System.Windows.MessageBox.Show(text + "\n\nFix these by re-pointing the pad or deleting it.", "Paddock - health check"); return; }
+            if (System.Windows.MessageBox.Show(text + $"\n\nRemove the {dead} missing shortcut(s) from their pads? (Folders/notes are left alone.)",
+                    "Paddock - health check", System.Windows.MessageBoxButton.YesNo) != System.Windows.MessageBoxResult.Yes) return;
+            foreach (var c in _layout.Fences) c.Pinned.RemoveAll(p => Missing(p));
+            Save();
+            foreach (var w in _windows) w.Refresh();
         }
     }
 }

@@ -67,6 +67,12 @@
                             <MenuItem x:Name="OpenAllItem" Header="Open all items" Click="OpenAll_Click"/>
                             <MenuItem x:Name="ReportItem" Header="Report duplicates and stale files..." Click="Report_Click"/>
                             <MenuItem Header="Hotkey..." Click="Hotkey_Click"/>
+                            <MenuItem x:Name="LockItem" Header="Lock position and size" IsCheckable="True" Click="Lock_Click"/>
+                            <MenuItem x:Name="SingleClickItem" Header="Open with a single click" IsCheckable="True" Click="SingleClick_Click"/>
+                            <MenuItem x:Name="SortUseItem" Header="Most-used items first" IsCheckable="True" Click="SortUse_Click"/>
+                            <MenuItem x:Name="BlurItem" Header="Blur behind the pad" IsCheckable="True" Click="Blur_Click"/>
+                            <MenuItem Header="Auto-hide when idle..." Click="AutoHide_Click"/>
+                            <MenuItem Header="Clear selection" Click="ClearSelection_Click"/>
                             <MenuItem Header="Export this pad..." Click="Export_Click"/>
                         </MenuItem>
                         <MenuItem x:Name="SplitItem" Header="Split this tab into its own pad"
@@ -132,6 +138,7 @@
                                     <Border x:Name="Flash" CornerRadius="6" Background="White" Opacity="0" IsHitTestVisible="False"/>
                                     <StackPanel Width="{Binding TileWidth}" Background="Transparent"
                                                 MouseLeftButtonDown="Item_MouseLeftButtonDown"
+                                                MouseLeftButtonUp="Item_MouseLeftButtonUp"
                                                 MouseMove="Item_MouseMove"
                                                 ToolTip="{Binding Tip}">
                                         <StackPanel.ContextMenu>
@@ -150,6 +157,10 @@
                                 </Grid>
                             </Border>
                             <DataTemplate.Triggers>
+                                <!-- Ctrl-click selection. -->
+                                <DataTrigger Binding="{Binding Selected}" Value="True">
+                                    <Setter TargetName="Tile" Property="Background" Value="#55FFFFFF"/>
+                                </DataTrigger>
                                 <!-- Hover: a soft backdrop plate and a glow that follows the icon's own outline. -->
                                 <Trigger SourceName="Tile" Property="IsMouseOver" Value="True">
                                     <Setter TargetName="Tile" Property="Background" Value="#33FFFFFF"/>

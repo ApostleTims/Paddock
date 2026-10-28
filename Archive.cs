@@ -98,6 +98,29 @@ namespace Paddock
             return done;
         }
 
+        /// <summary>Rule action "rename": rename each file in place (never overwriting), journaled so Undo puts the old name back.</summary>
+        public static int Rename(IEnumerable<FileInfo> files, Func<FileInfo, string?> newName)
+        {
+            var batch = Guid.NewGuid().ToString("N");
+            var log = ReadLog();
+            int done = 0;
+            foreach (var f in files)
+            {
+                try
+                {
+                    var name = newName(f);
+                    if (name == null || name.Equals(f.Name, StringComparison.Ordinal)) continue;
+                    var dest = Unique(Path.Combine(f.DirectoryName!, name));
+                    File.Move(f.FullName, dest);
+                    log.Add(new Entry(batch, DateTime.Now, f.FullName, dest, "move"));
+                    done++;
+                }
+                catch { /* in use, permission, or gone: leave it */ }
+            }
+            if (done > 0) WriteLog(log);
+            return done;
+        }
+
         /// <summary>Put the most recent batch back. Returns (restored, skipped).</summary>
         public static (int restored, int skipped) UndoLast()
         {

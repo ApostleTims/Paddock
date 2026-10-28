@@ -16,8 +16,16 @@ using WF = System.Windows.Forms;
 
 namespace Paddock
 {
-    public class FenceItem
+    public class FenceItem : System.ComponentModel.INotifyPropertyChanged
     {
+        public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+        bool _selected;
+        /// <summary>Ctrl-click selection; selected items are dragged, opened and highlighted together.</summary>
+        public bool Selected
+        {
+            get => _selected;
+            set { if (_selected == value) return; _selected = value; PropertyChanged?.Invoke(this, new(nameof(Selected))); }
+        }
         public string Name { get; set; } = "";
         public string Path { get; set; } = "";
         public BitmapSource? Icon { get; set; }
@@ -430,6 +438,7 @@ namespace Paddock
                                       .ToDictionary(g => g.Key, g => g.First().i, StringComparer.OrdinalIgnoreCase);
             foreach (var f in found.Where(f => query.Length == 0 || f.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
                                    .OrderBy(f => _cfg.VaultPath != null ? 0 : 1)
+                                   .ThenByDescending(f => _cfg.SortByUse && _cfg.UseCounts.TryGetValue(f.FullName, out var uses) ? uses : 0)
                                    .ThenBy(f => order.TryGetValue(f.FullName, out var ix) ? ix : int.MaxValue)
                                    .ThenBy(f => _cfg.VaultPath != null ? -f.LastWriteTimeUtc.Ticks : 0)
                                    .ThenBy(f => f.Name, StringComparer.OrdinalIgnoreCase))
@@ -515,7 +524,7 @@ namespace Paddock
 
         void Style_Click(object s, RoutedEventArgs e)
         {
-            if (StyleDialog.Edit(_cfg, smooth => ApplyLook(smooth), new Rect(Left, Top, ActualWidth, ActualHeight)))
+            if (StyleDialog.Edit(_cfg, smooth => { ApplyLook(smooth); ApplyFont(); }, new Rect(Left, Top, ActualWidth, ActualHeight)))
                 _save();
         }
 
@@ -584,6 +593,7 @@ namespace Paddock
         {
             if (e.OriginalSource is DependencyObject d && SearchBox.IsAncestorOf(d)) return;
             if (e.ClickCount == 2) { ToggleRollUp(); return; }
+            if (_cfg.Locked) return;
             _dragging = true;
             try { DragMove(); } catch { /* button released early */ }
             finally { _dragging = false; }
@@ -806,9 +816,40 @@ namespace Paddock
         {
             // Remember where the press began; Item_MouseMove turns a long enough drag into a pad-to-pad drag.
             _dragOrigin = e.GetPosition(this);
-            _dragItem = (sender as FrameworkElement)?.DataContext as FenceItem;
-            if (e.ClickCount != 2 || sender is not FrameworkElement { DataContext: FenceItem item }) return;
-            if (item.OnOpen != null) item.OnOpen(); else OpenItem(_cfg, item.Path);
+            var item = (sender as FrameworkElement)?.DataContext as FenceItem;
+            _dragItem = item;
+            if (item == null) return;
+            if ((Keyboard.Modifiers & ModifierKeys.Control) != 0 && item.OnOpen == null)
+            {
+                item.Selected = !item.Selected; // Ctrl-click builds a selection; no drag starts from this press
+                _dragItem = null;
+                return;
+            }
+            if (!item.Selected) foreach (var o in _items.Where(o => o.Selected)) o.Selected = false;
+            if (e.ClickCount != 2 || _cfg.SingleClick) return;
+            OpenFromItem(item);
+        }
+
+        void Item_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            var item = (sender as FrameworkElement)?.DataContext as FenceItem;
+            var pressed = _dragItem; _dragItem = null; // still set = the press never turned into a drag
+            if (!_cfg.SingleClick || item == null || pressed != item || (Keyboard.Modifiers & ModifierKeys.Control) != 0) return;
+            OpenFromItem(item);
+        }
+
+        /// <summary>Open the item, or every selected item when it is one of several selected.</summary>
+        void OpenFromItem(FenceItem item)
+        {
+            var sel = _items.Where(i => i.Selected).ToList();
+            var targets = item.Selected && sel.Count > 1 ? sel : new List<FenceItem> { item };
+            foreach (var i in targets) { if (i.OnOpen != null) i.OnOpen(); else OpenItem(_cfg, i.Path); }
+        }
+
+        string[] DragPaths(FenceItem item)
+        {
+            var sel = _items.Where(i => i.Selected && i.OnOpen == null && (File.Exists(i.Path) || Directory.Exists(i.Path))).Select(i => i.Path).ToArray();
+            return item.Selected && sel.Length > 1 ? sel : new[] { item.Path };
         }
 
         /// <summary>Open a pad item: vault notes go to Obsidian, everything else to its default app.</summary>
@@ -817,6 +858,7 @@ namespace Paddock
             try
             {
                 var target = path;
+                cfg.UseCounts[path] = (cfg.UseCounts.TryGetValue(path, out var used) ? used : 0) + 1; // for "most-used first"
                 if (cfg.VaultPath != null)
                 {
                     // Open the note in Obsidian rather than whatever owns .md.
@@ -831,7 +873,8 @@ namespace Paddock
 
         /// <summary>What this pad is showing right now (the active tab), for the command palette.</summary>
         public IEnumerable<PaletteEntry> PaletteItems() =>
-            _items.Where(i => i.OnOpen == null).Select(i => new PaletteEntry { Title = i.Name, Subtitle = _cfg.Title + "  -  " + i.Path, Icon = i.Icon, Path = i.Path, Pad = _cfg });
+            _items.Where(i => i.OnOpen == null || _cfg.PadType is "links" or "todo")   // clipboard history stays out of the palette
+                  .Select(i => new PaletteEntry { Title = i.Name, Subtitle = _cfg.Title + "  -  " + (i.OnOpen == null ? i.Path : i.Tip.Split('\n')[0]), Icon = i.Icon, Path = i.OnOpen == null ? i.Path : null, Pad = _cfg, Run = i.OnOpen });
 
         // Resizing from any side or corner. The mouse is read in screen space (not the thumb's own deltas),
         // because dragging a left/top edge moves the window and the thumb with it.
@@ -1009,14 +1052,21 @@ namespace Paddock
                 }
                 catch { }
             }
+            if (_cfg.ActionMode == "Rename") list = list.Where(f => RuleActions.ExpandName(_cfg.ActionTarget!, f, _cfg.Title) != null).ToList();
             return list;
         }
 
-        /// <summary>Run the action now; returns how many files were moved/copied.</summary>
+        /// <summary>Run the action now; returns how many files were moved/copied/renamed.</summary>
         public int RunAction(double minAgeSeconds = 0)
         {
             var files = ActionFiles(minAgeSeconds);
             if (files.Count == 0) return 0;
+            if (_cfg.ActionMode == "Rename")
+            {
+                var r = Archiver.Rename(files, f => RuleActions.ExpandName(_cfg.ActionTarget!, f, _cfg.Title));
+                if (r > 0) Refresh();
+                return r;
+            }
             var n = Archiver.Transfer(files, f => RuleActions.Expand(_cfg.ActionTarget!, f, _cfg.Title), _cfg.ActionMode == "Copy");
             if (n > 0) Refresh();
             return n;
@@ -1025,11 +1075,11 @@ namespace Paddock
         void ActionSet_Click(object s, RoutedEventArgs e)
         {
             var text = InputDialog.Ask("Rule action",
-                "What to do with files this pad's rules match.\nFormat:  move: D:\\Sorted\\{ext}   or   copy: D:\\Backup\\{yyyy}\\{MM}\nTokens: {ext} {yyyy} {MM} {pad}. Empty = off.\nNothing happens until you use \"Preview and run\" (or turn on automatic).",
+                "What to do with files this pad's rules match.\nFormat:  move: D:\\Sorted\\{ext}   or   copy: D:\\Backup\\{yyyy}\\{MM}\n   or   rename: {yyyy}-{MM}-{name}   (renames in place, keeps the extension; needs {name})\nTokens: {name} {ext} {yyyy} {MM} {pad}. Empty = off.\nNothing happens until you use \"Preview and run\" (or turn on automatic).",
                 RuleActions.Format(_cfg), this);
             if (text == null) return;
             var p = RuleActions.Parse(text);
-            if (p == null) { MessageBox.Show("Use  move: <full folder path>  or  copy: <full folder path>.", "Paddock"); return; }
+            if (p == null) { MessageBox.Show("Use  move: <full folder path>,  copy: <full folder path>,  or  rename: <template containing {name}>.", "Paddock"); return; }
             _cfg.ActionMode = p.Value.Mode; _cfg.ActionTarget = p.Value.Target;
             if (p.Value.Mode == "Off") { _cfg.ActionAuto = false; ActionAutoItem.IsChecked = false; }
             _save();
@@ -1041,8 +1091,10 @@ namespace Paddock
             if (_cfg.Rules.Count == 0) { MessageBox.Show("This pad has no rules, so nothing matches.", "Paddock"); return; }
             var files = ActionFiles();
             if (files.Count == 0) { MessageBox.Show("No files match right now.", "Paddock"); return; }
-            var verb = _cfg.ActionMode == "Copy" ? "Copy" : "Move";
-            var lines = files.Take(12).Select(f => $"{f.Name}  ->  {RuleActions.Expand(_cfg.ActionTarget!, f, _cfg.Title)}");
+            var verb = _cfg.ActionMode == "Copy" ? "Copy" : _cfg.ActionMode == "Rename" ? "Rename" : "Move";
+            var lines = files.Take(12).Select(f => $"{f.Name}  ->  " + (_cfg.ActionMode == "Rename"
+                ? RuleActions.ExpandName(_cfg.ActionTarget!, f, _cfg.Title)
+                : RuleActions.Expand(_cfg.ActionTarget!, f, _cfg.Title)));
             var more = files.Count > 12 ? $"\n...and {files.Count - 12} more" : "";
             if (MessageBox.Show($"{verb} {files.Count} file(s)?\n\n{string.Join("\n", lines)}{more}\n\nTray > Undo last archive / rule action reverses it.",
                     "Paddock - preview", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
@@ -1127,7 +1179,7 @@ namespace Paddock
             DragSource = this;
             try
             {
-                var data = new DataObject(DataFormats.FileDrop, new[] { item.Path });
+                var data = new DataObject(DataFormats.FileDrop, DragPaths(item));
                 DragDrop.DoDragDrop((DependencyObject)sender, data, DragDropEffects.Move | DragDropEffects.Copy);
             }
             finally { DragSource = null; }

@@ -123,6 +123,25 @@ namespace Paddock
 
         /// <summary>Links for links/project pads, as "Title|url; Title|url".</summary>
         public string Links { get; set; } = "";
+
+        /// <summary>The pad can't be dragged or resized (double-click roll-up still works).</summary>
+        public bool Locked { get; set; }
+
+        /// <summary>Open items with one click instead of a double-click.</summary>
+        public bool SingleClick { get; set; }
+
+        /// <summary>Float the items opened most often to the front (counts in <see cref="UseCounts"/>).</summary>
+        public bool SortByUse { get; set; }
+        public Dictionary<string, int> UseCounts { get; set; } = new();
+
+        /// <summary>Hide the pad after this many idle seconds; 0 = never. A hotkey, peek or quick-hide brings it back.</summary>
+        public int AutoHideSeconds { get; set; }
+
+        /// <summary>Blur whatever is behind the pad (Windows' blur-behind).</summary>
+        public bool Blur { get; set; }
+
+        /// <summary>Font family for the pad's text; null = the default.</summary>
+        public string? FontName { get; set; }
     }
 
     public class LayoutFile

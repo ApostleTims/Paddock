@@ -32,6 +32,8 @@ namespace Paddock
             yield return Cmd("Quick capture to note pad", "appends a timestamped line", QuickCapture);
             yield return Cmd("Import pad", "from a .paddockpad file", ImportPad);
             yield return Cmd("Check for updates", "looks for a newer release", () => _ = CheckForUpdate(manual: true));
+            yield return Cmd("Health check", "finds broken pads and dead shortcuts", HealthCheck);
+            yield return Cmd("Lock / unlock all pads", "stops pads being dragged or resized", ToggleLockAll);
             yield return Cmd("Next profile", "Ctrl+Alt+Right", () => CycleProfile(+1));
             yield return Cmd("Previous profile", "Ctrl+Alt+Left", () => CycleProfile(-1));
             foreach (var name in _layout.ProfileNames().Where(n => !n.Equals(_layout.ActiveProfile, StringComparison.OrdinalIgnoreCase)))

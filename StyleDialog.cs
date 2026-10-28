@@ -205,7 +205,7 @@ namespace Paddock
         sealed class Look
         {
             public string Color = "#202030";
-            public string? Color2, BorderColor;
+            public string? Color2, BorderColor, FontName;
             public double GradientAngle = 45, BorderWidth = 1, CornerRadius = 8, Opacity = 0.7, AnimSeconds = 6;
             public int TransitionMs = 150;
             public string Anim = "None";
@@ -214,14 +214,14 @@ namespace Paddock
             {
                 Color = c.Color, Color2 = c.Color2, BorderColor = c.BorderColor, GradientAngle = c.GradientAngle,
                 BorderWidth = c.BorderWidth, CornerRadius = c.CornerRadius, Opacity = c.Opacity,
-                AnimSeconds = c.AnimSeconds, TransitionMs = c.TransitionMs, Anim = c.Anim,
+                AnimSeconds = c.AnimSeconds, TransitionMs = c.TransitionMs, Anim = c.Anim, FontName = c.FontName,
             };
 
             public void ApplyTo(FenceConfig c)
             {
                 c.Color = Color; c.Color2 = Color2; c.BorderColor = BorderColor; c.GradientAngle = GradientAngle;
                 c.BorderWidth = BorderWidth; c.CornerRadius = CornerRadius; c.Opacity = Opacity;
-                c.AnimSeconds = AnimSeconds; c.TransitionMs = TransitionMs; c.Anim = Anim;
+                c.AnimSeconds = AnimSeconds; c.TransitionMs = TransitionMs; c.Anim = Anim; c.FontName = FontName;
             }
         }
 
@@ -318,6 +318,27 @@ namespace Paddock
             AddSlider("Corner radius", 0, 28, 1, "0", () => cfg.CornerRadius, v => cfg.CornerRadius = v);
             AddSlider("Border width", 0, 6, 1, "0", () => cfg.BorderWidth, v => cfg.BorderWidth = v);
             AddSlider("Gradient angle", 0, 360, 5, "0", () => cfg.GradientAngle, v => cfg.GradientAngle = v);
+
+            // ---- Font ----
+            root.Children.Add(Heading("Font"));
+            var fontRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
+            fontRow.Children.Add(new TextBlock { Text = "Icon labels", Width = 104, VerticalAlignment = VerticalAlignment.Center, FontSize = 12 });
+            var font = new ComboBox { Width = 140 };
+            font.Items.Add("(default)");
+            var fontNames = new System.Collections.Generic.List<string>();
+            foreach (var f in Fonts.SystemFontFamilies) fontNames.Add(f.Source);
+            fontNames.Sort(StringComparer.OrdinalIgnoreCase);
+            foreach (var n in fontNames) font.Items.Add(n);
+            void SyncFont() => font.SelectedItem = cfg.FontName != null && font.Items.Contains(cfg.FontName) ? cfg.FontName : "(default)";
+            SyncFont();
+            font.SelectionChanged += (_, _) =>
+            {
+                cfg.FontName = font.SelectedItem is string n && n != "(default)" ? n : null;
+                preview(false);
+            };
+            fontRow.Children.Add(font);
+            root.Children.Add(fontRow);
+            sliders.Add(SyncFont);
 
             // ---- Motion ----
             root.Children.Add(Heading("Motion"));
